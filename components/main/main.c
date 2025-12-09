@@ -1,46 +1,72 @@
-// components/main/main.c
 #include <stdio.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
-#include "esp_log.h"
-#include "sdkconfig.h"
 
-static const char *TAG = "assignment";
+#include "model_data.cc"
 
-/* External output handler implemented in components/main/output_handler.c */
-void HandleOutput(float x_value, float y_value);
+#include "tensorflow/lite/micro/all_ops_resolver.h"
+#include "tensorflow/lite/micro/micro_interpreter.h"
+#include "tensorflow/lite/schema/schema_generated.h"
+#include "tensorflow/lite/version.h"
+
+#include "output_handler.h"
+
+#define TENSOR_ARENA_SIZE 25 * 1024
+static uint8_t tensor_arena[TENSOR_ARENA_SIZE];
 
 void app_main(void)
 {
-    // Give system some time to finish other initializations (LVGL, display, etc.)
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    const tflite::Model* model = tflite::GetModel(g_sine_model_int8_tflite);
+    if (model->version() != TFLITE_SCHEMA_VERSION) {
+        printf("Model schema %d does not match runtime %d\n",
+               model->version(), TFLITE_SCHEMA_VERSION);
+        return;
+    }
 
-    int blink_pin = CONFIG_BLINK_GPIO;
-    ESP_LOGI(TAG, "Blink pin from menuconfig: %d", blink_pin);
+    // Required for quantized model
+    static tflite::MicroMutableOpResolver<3> resolver;
+    resolver.AddFullyConnected();
+    resolver.AddQuantize();
+    resolver.AddDequantize();
 
-    gpio_reset_pin(blink_pin);
-    gpio_set_direction(blink_pin, GPIO_MODE_OUTPUT);
+    // Interpreter
+    tflite::MicroInterpreter interpreter(model, resolver, tensor_arena,
+                                         TENSOR_ARENA_SIZE);
 
-    int cnt = 0;
-    while (1) {
-        // Blink LED as before
-        gpio_set_level(blink_pin, cnt % 2);
+    if (interpreter.AllocateTensors() != kTfLiteOk) {
+        printf("AllocateTensors() failed\n");
+        return;
+    }
 
-        // Generate test sine wave input
-        float angle_deg = (float)(cnt % 360);
-        float x = angle_deg * (3.14159265f / 180.0f); // convert to radians
-        float y = sinf(x); // y in [-1, 1]
+    TfLiteTensor* input = interpreter.input(0);
+    TfLiteTensor* output = interpreter.output(0);
 
-        // Call the LVGL output handler to visualize the y value
+    float x = 0;
+    while (true) {
+
+        // Convert x to int8
+        float input_scale = input->params.scale;
+        int zero_point = input->params.zero_point;
+        int8_t quant_x = (int8_t)(x / input_scale + zero_point);
+
+        input->data.int8[0] = quant_x;
+
+        if (interpreter.Invoke() != kTfLiteOk) {
+            printf("Invoke failed\n");
+            continue;
+        }
+
+        int8_t y_q = output->data.int8[0];
+
+        // Convert back to float
+        float y = (y_q - output->params.zero_point) * output->params.scale;
+
         HandleOutput(x, y);
 
-        // Log for serial monitor (useful for report)
-        ESP_LOGI(TAG, "Counter: %d, x: %.3f, y: %.4f", cnt, x, y);
+        x += 0.1f;
+        if (x > 2 * M_PI) x = 0;
 
-        cnt++;
-        // wait 1 second
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
