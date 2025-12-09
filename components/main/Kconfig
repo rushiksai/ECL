@@ -1,0 +1,9 @@
+menu "Main component configuration"
+
+config BLINK_GPIO
+    int "Blink GPIO number"
+    default 2
+    help
+      Set the GPIO number used by the blink LED.
+
+endmenu
