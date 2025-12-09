@@ -1,90 +1,27 @@
 // components/main/output_handler.c
-#include "lvgl.h"
 #include <stdio.h>
+#include <math.h>
+#include "esp_log.h"
 
-// If your project has a MicroPrintf function, declare it here.
-// If not, you can remove the MicroPrintf lines.
-extern void MicroPrintf(const char *fmt, ...);
+static const char *TAG = "output_handler";
 
-// Styles (file-scope)
-static lv_style_t style_bg_red;
-static lv_style_t style_bg_green;
-static lv_style_t style_bg_white;
-
-// Label and screen
-static lv_obj_t* label = NULL;
-static lv_obj_t* screen = NULL;
-static int styles_ready = 0;
-
-// Initialize styles (call once)
-static void setup_styles(void)
-{
-    if (styles_ready) return;
-    styles_ready = 1;
-
-    lv_style_init(&style_bg_red);
-    lv_style_set_bg_opa(&style_bg_red, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_bg_red, lv_color_hex(0xFF0000));
-
-    lv_style_init(&style_bg_green);
-    lv_style_set_bg_opa(&style_bg_green, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_bg_green, lv_color_hex(0x00FF00));
-
-    lv_style_init(&style_bg_white);
-    lv_style_set_bg_opa(&style_bg_white, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_bg_white, lv_color_hex(0xFFFFFF));
-}
-
-// Exported function called from main.c
+/**
+ * Minimal output handler for the assignment (serial-only).
+ * Prints x_value and y_value and a simple text marker that you can
+ * screenshot/grep for the report.
+ */
 void HandleOutput(float x_value, float y_value)
 {
-    setup_styles();
+    // Print a clear marker so you can grep it in the serial log
+    // Use MicroPrintf style if you use it elsewhere; ESP_LOGI is fine.
+    ESP_LOGI(TAG, "HANDLE_OUTPUT: x=%0.6f, y=%0.6f", (double)x_value, (double)y_value);
 
-    screen = lv_scr_act();
-    if (screen == NULL) {
-        MicroPrintf ? MicroPrintf("Error: Active screen is null.\n") : 0;
-        return;
-    }
-
-    if (label == NULL) {
-        label = lv_label_create(screen);
-        if (label == NULL) {
-            MicroPrintf ? MicroPrintf("Error: Failed to create label.\n") : 0;
-            return;
-        }
-        lv_obj_set_width(label, LV_HOR_RES - 20);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-        lv_label_set_recolor(label, true);
-
-        static lv_style_t style;
-        lv_style_init(&style);
-        lv_style_set_text_font(&style, &lv_font_montserrat_22);
-        lv_style_set_text_align(&style, LV_TEXT_ALIGN_CENTER);
-        lv_obj_add_style(label, &style, 0);
-    }
-
-    char display_str[128];
-    snprintf(display_str, sizeof(display_str), "Output: %.4f", y_value);
-    lv_label_set_text(label, display_str);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-
-    // Remove any of the three styles (safe)
-    lv_obj_remove_style(screen, &style_bg_red, LV_PART_MAIN);
-    lv_obj_remove_style(screen, &style_bg_green, LV_PART_MAIN);
-    lv_obj_remove_style(screen, &style_bg_white, LV_PART_MAIN);
-
-    // Decide which background to add
+    // Optional: print status for thresholds to mimic visualization
     if (y_value > 0.5f) {
-        lv_obj_add_style(screen, &style_bg_green, LV_PART_MAIN);
+        ESP_LOGI(TAG, "HANDLE_OUTPUT: STATE=GREEN (y>0.5)");
     } else if (y_value < -0.5f) {
-        lv_obj_add_style(screen, &style_bg_red, LV_PART_MAIN);
+        ESP_LOGI(TAG, "HANDLE_OUTPUT: STATE=RED (y<-0.5)");
     } else {
-        lv_obj_add_style(screen, &style_bg_white, LV_PART_MAIN);
+        ESP_LOGI(TAG, "HANDLE_OUTPUT: STATE=WHITE (-0.5<=y<=0.5)");
     }
-
-    // Refresh the display
-    lv_task_handler();
-
-    // Log
-    MicroPrintf ? MicroPrintf("x_value: %f, y_value: %f\n", (double)x_value, (double)y_value) : 0;
 }
