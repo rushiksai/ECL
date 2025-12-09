@@ -7,3 +7,6 @@
 [submodule "components/lv_drivers"]
 	path = components/lv_drivers
 	url = https://github.com/lvgl/lv_drivers.git
+[submodule "components/lv_port_esp32"]
+	path = components/lv_port_esp32
+	url = https://github.com/lvgl/lv_port_esp32.git
